@@ -1,0 +1,155 @@
+# =============================================================================
+# Yandex Contest CI template — Catch the Robot
+# =============================================================================
+# CANONICAL: byte-for-byte identical across every problem EXCEPT the per-problem
+# `variables:` block below and the grader filename. To stand up a new problem,
+# copy this file and edit only that block (and ship the matching check.py +
+# locked data/).
+#
+# Grading contract: an api-triggered pipeline pulls the participant submission
+# into $REPO_NAME, runs `python check.py`, which writes report.json. A clean run
+# -> send_report publishes the score; any hard failure -> send_crash publishes a
+# Crash verdict so Contest never waits forever.
+# =============================================================================
+
+workflow:
+  name: "Check submission $RUN_ID"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+
+variables:
+  # ---- shared across all problems (do not change) -------------------------
+  # The notebook runs inside a podman container with NOTEBOOK_IMAGE.
+  NOTEBOOK_IMAGE: "cr.yandex/crpe6hs3eavcafkcisb5/ioai-gitlab:20260725"
+
+  # ---- per-problem knobs (edit these when cloning to a new problem) --------
+  # WALL_CLOCK is check.py's own budget; keep it comfortably BELOW the job
+  # `timeout:` minus setup so a slow submission gets a clean TimeLimitExceeded
+  # instead of a GitLab hard-kill. NOTEBOOK_TIMEOUT is the per-cell backstop and
+  # is kept ABOVE the wall-clock so slowness reports as TLE, not RuntimeError.
+  WALL_CLOCK_BUDGET_SEC: "960"
+  NOTEBOOK_TIMEOUT_SEC: "1260"
+  # Largest accepted solution.ipynb. Checked BEFORE execution -> PresentationError,
+  # so nobody can smuggle weights or precomputed answers inside the notebook.
+  MAX_NOTEBOOK_BYTES: "1048576"
+  # How much of the run log is published back to the participant. The untrimmed log
+  # stays in the job artifacts either way.
+  LOG_TAIL_LINES: "300"
+  # Production round: grade the live leaderboard split and expose the complete
+  # public training set to the participant notebook.
+  GRADE_SPLIT: "test_leaderboard_b"
+  TRAIN_SPLIT: "train"
+  # The locked dataset is provisioned on the grading host (baked into the job image
+  # above), NOT shipped in the repo via LFS. check.py reads it from this root and
+  # hands it to podman as read-only volumes.
+  DATASET_ROOT: "/problem/dataset"
+
+stages:
+  - test
+  - send_report
+  - send_crash
+
+test:
+  stage: test
+  tags:
+    - ioai-VoaZXWXcz3
+  # Pin an immutable dataset version. Update this tag only after the corresponding
+  # image has been pushed and validated locally.
+  image: contest.gitlab.yandexcloud.net:5050/problems/9945797-2026-05-21-5hxevedli4/ml/ci-template:multitask-v6-20260803
+  timeout: 45m
+  # Auto-retry ONLY infrastructure failures (bad node / sandbox create error).
+  # Script/auth/grading failures are NOT retried — they will not self-heal.
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - scheduler_failure
+
+  before_script:
+    # The locked dataset lives on the grading host at $DATASET_ROOT (baked into the
+    # job image), NOT in the repo. Fail fast if it is missing so a misprovisioned
+    # runner reports Crash rather than grading against an empty tree. The job image
+    # already ships git, curl, podman and python3 -- nothing to install.
+    - |
+      if [ ! -d "$DATASET_ROOT" ] || [ -z "$(ls -A "$DATASET_ROOT" 2>/dev/null)" ]; then
+        echo "FATAL: $DATASET_ROOT is missing or empty -- grading host not provisioned"
+        exit 1
+      fi
+    # Bring the participant solution into $REPO_NAME: download for a file task,
+    # clone for a repository task. Then drop the .git dirs.
+    - |
+      if [ -n "$RUN_URL" ]; then
+        mkdir -p "$REPO_NAME"
+        cd "$REPO_NAME"
+        curl -fL --progress-bar -H "Authorization: Bearer $JWT_TOKEN" -o "$FILENAME" "$RUN_URL"
+        cd ..
+      else
+        # Pull ONLY solution.ipynb from the submission -- no LFS, no dataset/.
+        # Partial clone (--filter=blob:none, no file blobs) + --no-checkout, then check
+        # out just the one file. The grader supplies dataset/ via overlays, so a
+        # participant committing the data (~120 MB) never costs us a download.
+        GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --filter=blob:none --no-checkout \
+          "https://git:$PROJECT_TOKEN@$CI_SERVER_HOST/$REPO_PATH.git" "$REPO_NAME"
+        cd "$REPO_NAME"
+        git fetch --depth 1 --filter=blob:none origin $COMMIT_ID
+        git checkout $COMMIT_ID -- solution.ipynb || echo "WARN: solution.ipynb not found in submission"
+        rm -rf .git
+        cd ..
+      fi
+      rm -rf .git
+    # Strip grading secrets so the participant notebook (a child process) cannot
+    # read them from os.environ. NOTE: a hostile notebook can still read
+    # /proc/<ppid>/environ -- full isolation needs a network-isolated runner.
+    - |
+      unset CI_JOB_TOKEN CI_DEPENDENCY_PROXY_PASSWORD CI_REGISTRY_PASSWORD GIT_SSH_KEY JWT_TOKEN PROJECT_TOKEN
+      rm -f README.md
+
+  artifacts:
+    when: always
+    paths:
+      - report.json
+      # Referenced from report.json artifacts[]: the executed code as plain text
+      # (OUTPUT) and the trimmed run log (ERROR). send_report reads them from here.
+      - executed.py
+      - executed_tail.log
+      # Organizer copies: the full executed notebook with every cell output inline,
+      # and nbconvert's merged streams, untrimmed.
+      - executed.ipynb
+      - executed_output.log
+
+  script:
+    # check.py runs the notebook inside podman (--network=none, GPU via --device,
+    # dataset as RO volumes, $REPO as the RW volume) and scores the result.
+    - python3 check.py
+
+send_report:
+  stage: send_report
+  when: on_success
+  tags:
+    - ioai-VoaZXWXcz3
+  image: cr.yandex/crphb5jkfgvtue082qcp/publish-report:latest
+  dependencies:
+    - test
+  script:
+    - publish report.json
+
+send_crash:
+  stage: send_crash
+  when: on_failure
+  tags:
+    - ioai-VoaZXWXcz3
+  image: cr.yandex/crphb5jkfgvtue082qcp/publish-report:latest
+  dependencies:
+    - test
+  script:
+    - |
+      cat > report.json <<EOF
+      {
+        "report": {
+          "verdict": "Crash",
+          "tests": []
+        }
+      }
+      EOF
+    - publish report.json

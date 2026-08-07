@@ -1,0 +1,2 @@
+# Nothing in this repository uses git-LFS. The dataset and models are baked into
+# the job image (see Dockerfile), never committed here.

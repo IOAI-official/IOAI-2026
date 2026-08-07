@@ -1,0 +1,142 @@
+workflow:
+  name: "Check submission $RUN_ID"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+
+default:
+  tags:
+    - ioai-VoaZXWXcz3
+
+stages:
+  - test
+  - send_report
+  - send_crash
+
+variables:
+  # ---- Which hidden round is graded -------------------------------------- #
+  # test_leaderboard_a (live) | test_leaderboard_b (final). Switching rounds is
+  # this one value and nothing else. 'both' is organizer-only and is selected
+  # automatically for the author-solution repository in the script below.
+  GRADE_SPLIT: "test_leaderboard_b"
+
+  # ---- Limits ------------------------------------------------------------- #
+  # Rejected before the notebook is converted or run -> PresentationError.
+  MAX_NOTEBOOK_BYTES: "1048576"
+  # The ONE time limit: start-up, one-time preparation (including loading a
+  # model) and every game in the round, all together. There is deliberately no
+  # separate per-turn budget -- a submission spends this however it likes.
+  # Enforced OUTSIDE the container -> TimeLimitExceeded.
+  # Stays below the job `timeout:`, with room for two rounds in 'both' mode
+  # plus the image pull and nbconvert.
+  TIME_LIMIT_SEC: "660"
+  # How much of the run log is published back to the participant. The untrimmed
+  # log stays in the job artifacts either way.
+  LOG_TAIL_LINES: "300"
+
+  # ---- Sandbox ------------------------------------------------------------ #
+  # The participant notebook runs here. This image already carries CPython plus
+  # every library named in the statement, so there is no pip install and no
+  # image build at submission time.
+  RUNTIME_IMAGE: "cr.yandex/crpe6hs3eavcafkcisb5/ioai-gitlab:20260725"
+  GPU_DEVICE: "nvidia.com/gpu=all"
+  # Deliberately empty: judging should match the Jupyter workspace contestants
+  # develop in, so no memory ceiling is invented here. Set a value only if a
+  # runner needs protecting from a runaway submission.
+  CONTAINER_MEMORY: ""
+  # Offline model bundle, baked into the job image (see Dockerfile).
+  MODELS_SRC: "/problem/models"
+
+  # Never smudge LFS in the participant checkout.
+  GIT_LFS_SKIP_SMUDGE: "1"
+
+test:
+  stage: test
+  # Job image: built from ./Dockerfile, bakes the offline model bundle into
+  # /problem/models. Rebuild and repoint this tag whenever the models change --
+  # see RUNBOOK.md. Never reuse a tag; CI caches by tag.
+  image: contest.gitlab.yandexcloud.net:5050/problems/9945797-2026-06-03-98m1xdyeso/ml/ci-template/potato-job:20260801
+  timeout: 60 minutes
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+  before_script:
+    # Fetch ONLY solution.ipynb. The contestant's repository is never fully
+    # checked out and their LFS objects are never smudged.
+    - |
+      if [ -n "$RUN_URL" ]; then
+        mkdir -p "$REPO_NAME"
+        curl -fL --progress-bar -H "Authorization: Bearer $JWT_TOKEN" \
+          -o "$REPO_NAME/$FILENAME" "$RUN_URL"
+      else
+        GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --filter=blob:none --no-checkout \
+          "https://git:$PROJECT_TOKEN@$CI_SERVER_HOST/$REPO_PATH.git" "$REPO_NAME"
+        git -C "$REPO_NAME" fetch --depth 1 origin "$COMMIT_ID"
+        git -C "$REPO_NAME" checkout "$COMMIT_ID" -- solution.ipynb
+        rm -rf "$REPO_NAME/.git"
+      fi
+    - |
+      unset CI_JOB_TOKEN CI_DEPENDENCY_PROXY_PASSWORD CI_REGISTRY_PASSWORD
+      unset GIT_SSH_KEY JWT_TOKEN PROJECT_TOKEN
+    # private_data is never mounted into the participant container. These
+    # permissions are defence in depth on the runner itself.
+    - chmod 700 grader.py split_grader.py private_data
+    - chmod 600 private_data/*
+    - test ! -d .git || chmod -R go-rwx .git
+
+  script:
+    - |
+      grade_split="$GRADE_SPLIT"
+      case "${REPO_PATH:-}" in
+        */ml/author-solution) grade_split="both" ;;
+      esac
+      python3 split_grader.py \
+        --repository "$REPO_NAME" \
+        --private-data private_data \
+        --public-data public_data \
+        --report report.json \
+        --split "$grade_split"
+
+  artifacts:
+    when: always
+    paths:
+      - report.json
+      # Referenced from report.json artifacts[]: the converted program (OUTPUT) and
+      # everything the run printed (ERROR). send_report reads them from here.
+      - solution.py
+      # Published to the participant: the last LOG_TAIL_LINES of the run log.
+      - solution_output.log
+      # Organizer copy, untrimmed.
+      - solution_stderr.log
+
+send_report:
+  stage: send_report
+  when: on_success
+  image: cr.yandex/crphb5jkfgvtue082qcp/publish-report:latest
+  dependencies:
+    - test
+  script:
+    - publish report.json
+
+send_crash:
+  stage: send_crash
+  when: on_failure
+  image: cr.yandex/crphb5jkfgvtue082qcp/publish-report:latest
+  dependencies:
+    - test
+  script:
+    # A Crash report is report-level with an empty test list, so there is nowhere
+    # to attach checking time. Every non-crash path publishes runningTime from
+    # grader.write_terminal_report().
+    - |
+      cat > report.json <<EOF
+      {
+        "report": {
+          "verdict": "Crash",
+          "tests": []
+        }
+      }
+      EOF
+    - publish report.json

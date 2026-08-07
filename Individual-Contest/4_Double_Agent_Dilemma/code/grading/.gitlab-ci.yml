@@ -1,0 +1,159 @@
+# =============================================================================
+# Yandex Contest CI template — Find the Order
+# =============================================================================
+# CANONICAL: byte-for-byte identical across every problem EXCEPT the per-problem
+# `variables:` block below and the grader filename. To stand up a new problem,
+# copy this file and edit only that block (and ship the matching check.py +
+# locked data/).
+#
+# Grading contract: an api-triggered pipeline pulls the participant submission
+# into $REPO_NAME, runs `python check.py`, which writes report.json. A clean run
+# -> send_report publishes the score; any hard failure -> send_crash publishes a
+# Crash verdict so Contest never waits forever.
+# =============================================================================
+
+workflow:
+  name: "Check submission $RUN_ID"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+
+variables:
+  # ---- shared across all problems (do not change) -------------------------
+  # The notebook runs inside a podman container with NOTEBOOK_IMAGE.
+  # This is the image used by download-models.py to create and verify the two
+  # offline checkpoints. It includes torch, torchvision, timm, safetensors,
+  # nbconvert, and the matching Python kernel.
+  NOTEBOOK_IMAGE: "cr.yandex/crpe6hs3eavcafkcisb5/ioai-gitlab:20260805"
+
+  # ---- per-problem knobs (edit these when cloning to a new problem) --------
+  # The one and only time limit: 15 minutes for the whole notebook, enforced on the
+  # host around `podman run`. There is deliberately no per-cell timeout -- it could
+  # only fire before this one and report RuntimeError for what is really a timeout.
+  # Keep it comfortably below the job `timeout:` so a slow submission gets a clean
+  # TimeLimitExceeded rather than a GitLab hard-kill, and in step with the limit the
+  # statement advertises to participants.
+  WALL_CLOCK_BUDGET_SEC: "864"
+  # Largest accepted solution.ipynb. Checked BEFORE execution -> PresentationError,
+  # so nobody can smuggle weights or precomputed answers inside the notebook.
+  MAX_NOTEBOOK_BYTES: "20971520"
+  # Which hidden split is graded. This is the ONLY edit needed to switch rounds:
+  #   pretest             -- dry runs / pipeline validation, never the leaderboard
+  #   test_leaderboard_a  -- live leaderboard
+  #   test_leaderboard_b  -- final ranking
+  TEST_SPLIT: "test_leaderboard_b"
+  # The locked dataset + model bundle are provisioned on the grading host (bind
+  # mounted into the job), NOT shipped in the repo via LFS. check.py reads them from
+  # these roots and hands them to podman as read-only volumes.
+  DATASET_ROOT: "/problem/dataset"
+  MODELS_ROOT: "/problem/models"
+
+stages:
+  - test
+  - send_report
+  - send_crash
+
+test:
+  stage: test
+  tags:
+    - ioai-VoaZXWXcz3
+  # Pin the exact job-image tag. This MUST match the tag that was pushed: runners
+  # cache by tag, so an untagged reference (:latest) can keep serving a cached copy
+  # long after the image behind it was rebuilt. Never reuse a tag CI has pointed at
+  # -- give every rebuild a fresh date and update this line in the same commit.
+  image: contest.gitlab.yandexcloud.net:5050/problems/9945797-2026-05-21-tfcdtkuhks/ml/ci-template:v3
+  timeout: 45m
+  # Auto-retry ONLY infrastructure failures (bad node / sandbox create error).
+  # Script/auth/grading failures are NOT retried — they will not self-heal.
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - scheduler_failure
+
+  before_script:
+    # The locked dataset + model bundle live on the grading host at
+    # $DATASET_ROOT / $MODELS_ROOT (bind-mounted into the job), NOT in the repo.
+    # Fail fast if they are missing so a misprovisioned runner reports Crash rather
+    # than grading against an empty tree. The default image already ships git, curl,
+    # podman and python3 -- nothing to install.
+    - |
+      for d in "$DATASET_ROOT" "$MODELS_ROOT"; do
+        if [ ! -d "$d" ] || [ -z "$(ls -A "$d" 2>/dev/null)" ]; then
+          echo "FATAL: $d is missing or empty -- grading host not provisioned"
+          exit 1
+        fi
+      done
+    # Bring the participant solution into $REPO_NAME: download for a file task,
+    # clone for a repository task. Then drop the .git dirs.
+    - |
+      if [ -n "$RUN_URL" ]; then
+        mkdir -p "$REPO_NAME"
+        cd "$REPO_NAME"
+        curl -fL --progress-bar -H "Authorization: Bearer $JWT_TOKEN" -o "$FILENAME" "$RUN_URL"
+        cd ..
+      else
+        # Pull ONLY solution.ipynb from the submission -- no LFS, no data/, no models/.
+        # Partial clone (--filter=blob:none, no file blobs) + --no-checkout, then check
+        # out just the one file. The grader supplies data/ + models/ via overlays, so a
+        # participant committing the dataset (~5 GB) never costs us a download.
+        GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --filter=blob:none --no-checkout \
+          "https://git:$PROJECT_TOKEN@$CI_SERVER_HOST/$REPO_PATH.git" "$REPO_NAME"
+        cd "$REPO_NAME"
+        git fetch --depth 1 --filter=blob:none origin $COMMIT_ID
+        git checkout $COMMIT_ID -- solution.ipynb || echo "WARN: solution.ipynb not found in submission"
+        rm -rf .git
+        cd ..
+      fi
+      rm -rf .git
+    # Strip grading secrets so the participant notebook (a child process) cannot
+    # read them from os.environ. NOTE: a hostile notebook can still read
+    # /proc/<ppid>/environ -- full isolation needs a network-isolated runner.
+    - |
+      unset CI_JOB_TOKEN CI_DEPENDENCY_PROXY_PASSWORD CI_REGISTRY_PASSWORD GIT_SSH_KEY JWT_TOKEN PROJECT_TOKEN
+      rm -f README.md
+
+  artifacts:
+    when: always
+    paths:
+      - report.json
+      - executed.ipynb
+      - executed_stdout.log
+      - executed_stderr.log
+      - error.txt
+
+  script:
+    # check.py runs the notebook inside podman (--network=none, GPU via --device,
+    # dataset/models as RO volumes, $REPO as the RW volume) and scores the result.
+    - python3 check.py
+
+send_report:
+  stage: send_report
+  when: on_success
+  tags:
+    - ioai-VoaZXWXcz3
+  image: cr.yandex/crphb5jkfgvtue082qcp/publish-report:latest
+  dependencies:
+    - test
+  script:
+    - publish report.json
+
+send_crash:
+  stage: send_crash
+  when: on_failure
+  tags:
+    - ioai-VoaZXWXcz3
+  image: cr.yandex/crphb5jkfgvtue082qcp/publish-report:latest
+  dependencies:
+    - test
+  script:
+    - |
+      cat > report.json <<EOF
+      {
+        "report": {
+          "verdict": "Crash",
+          "tests": []
+        }
+      }
+      EOF
+    - publish report.json

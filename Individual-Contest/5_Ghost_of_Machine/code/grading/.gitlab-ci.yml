@@ -1,0 +1,162 @@
+# =============================================================================
+# Yandex Contest CI template — Text Boundary Detection
+# =============================================================================
+# CANONICAL: byte-for-byte identical across every problem EXCEPT the per-problem
+# `variables:` block below and the grader filename (checker.py). To stand up a
+# new problem, copy this file and edit only that block (and ship the matching
+# grader + locked data/models).
+#
+# Grading contract: an api-triggered pipeline pulls the participant submission
+# into $REPO_NAME, runs the grader, which writes report.json. A clean run ->
+# send_report publishes the score; any hard failure -> send_crash publishes a
+# Crash verdict so Contest never waits forever.
+# =============================================================================
+
+workflow:
+  name: "Check submission $RUN_ID"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+
+variables:
+  # ---- shared across all problems (do not change) -------------------------
+  # The notebook runs inside a podman container from the PREBUILT IOAI runtime --
+  # same image as the participants' Jupyter, CPython + every statement library
+  # already installed. NO pip install, NO Containerfile, NO podman build: the
+  # image has no pip on its build PATH (a build step dies with `pip: not found`),
+  # and everything the notebook needs is already baked in.
+  RUNTIME_IMAGE: "cr.yandex/crpe6hs3eavcafkcisb5/ioai-gitlab:20260725"
+
+  # ---- per-problem knobs (edit these when cloning to a new problem) --------
+  # WALL_CLOCK is the grader's own budget; keep it comfortably BELOW the job
+  # `timeout:` minus setup so a slow submission gets a clean TimeLimitExceeded
+  # instead of a GitLab hard-kill. NOTEBOOK_TIMEOUT is the per-cell backstop and
+  # is kept ABOVE the wall-clock so slowness reports as TLE, not RuntimeError.
+  # Deliberately NOT set here: checker.py derives both from GRADE_SPLIT, so the
+  # live round keeps the promised 10 minutes while the final round runs
+  # effectively uncapped. Setting them here would override that and silently
+  # reintroduce the mismatch. Override only for a one-off experiment.
+  # Dataset + models are BAKED INTO THE JOB IMAGE (see Dockerfile), not shipped in
+  # this repo. check.py reads them from here and bind-mounts them read-only into
+  # the notebook sandbox. No `git lfs pull` on the grading path any more.
+  DATASET_ROOT: "/problem/dataset"
+  MODELS_ROOT: "/problem/models"
+  # Which hidden split is graded: test_leaderboard_a (live) | test_leaderboard_b (final)
+  # | pretest (dry run). Answers live at dataset/<split>_answers.jsonl, never inside
+  # the split folder, so switching this needs no other edit.
+  GRADE_SPLIT: "test_leaderboard_b"
+  # Which split is mounted as the notebook's dataset/train. Pair TRAIN_SPLIT=pretrain
+  # with GRADE_SPLIT=pretest for a fast end-to-end dry run (200 train / 60 graded).
+  TRAIN_SPLIT: "train"
+  # Max size of the submitted notebook; checked BEFORE execution -> PresentationError.
+  MAX_NOTEBOOK_BYTES: "20971520"
+
+stages:
+  - test
+  - send_report
+  - send_crash
+
+test:
+  stage: test
+  tags:
+    - ioai-VoaZXWXcz3
+  # Job image = runner-job-image:gpu + the baked dataset/models (see Dockerfile).
+  # BUMP THIS TAG ON EVERY REBUILD: runners cache by tag and will not re-pull a tag
+  # they already hold. The notebook itself runs in $RUNTIME_IMAGE via podman, so
+  # this image needs no CUDA/pytorch of its own -- just enough to run podman.
+  image: contest.gitlab.yandexcloud.net:5050/problems/9945797-2026-05-21-l7mbvhtwra/ml/ci-template:20260805
+  # Must exceed WALL_CLOCK_BUDGET_SEC + before_script overhead and stay under
+  # the runner's maximum_timeout. 45m > wall-clock + ~8m setup.
+  timeout: 45m
+  # Auto-retry ONLY infrastructure failures (bad node / sandbox create error).
+  # Script/auth/grading failures are NOT retried — they will not self-heal.
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - scheduler_failure
+
+  before_script:
+    # Dataset and models are baked into the job image, so there is no LFS pull and
+    # no per-submission download. Fail loudly if they are absent: that means the
+    # image was built wrong, or `image:` above points at a stale tag.
+    - |
+      for d in "$DATASET_ROOT" "$MODELS_ROOT"; do
+        if [ ! -d "$d" ]; then
+          echo "FATAL: $d missing from the job image -- rebuild it or fix image:"
+          exit 1
+        fi
+      done
+      echo "baked assets ok: $(ls "$DATASET_ROOT" | tr '\n' ' ')"
+    # Bring the participant solution into $REPO_NAME: download for a file task,
+    # clone for a repository task. Then drop the .git dirs.
+    - |
+      if [ -n "$RUN_URL" ]; then
+        mkdir -p "$REPO_NAME"
+        cd "$REPO_NAME"
+        curl -fL --progress-bar -H "Authorization: Bearer $JWT_TOKEN" -o "$FILENAME" "$RUN_URL"
+        cd ..
+      else
+        # Pull ONLY solution.ipynb from the submission -- no LFS, no data/, no models/.
+        # The grader supplies test data + models via overlays, so a participant who
+        # commits the dataset/models never costs us a download.
+        GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --filter=blob:none --no-checkout \
+          "https://git:$PROJECT_TOKEN@$CI_SERVER_HOST/$REPO_PATH.git" "$REPO_NAME"
+        cd "$REPO_NAME"
+        git fetch --depth 1 --filter=blob:none origin $COMMIT_ID
+        git checkout $COMMIT_ID -- solution.ipynb || echo "WARN: solution.ipynb not found in submission"
+        rm -rf .git
+        cd ..
+      fi
+      rm -rf .git
+    # Strip grading secrets so the participant notebook (a child process) cannot
+    # read them from os.environ. NOTE: a hostile notebook can still read
+    # /proc/<ppid>/environ -- full isolation needs a network-isolated runner
+    # (which is exactly what --network=none in the grader provides).
+    - |
+      unset CI_JOB_TOKEN CI_DEPENDENCY_PROXY_PASSWORD CI_REGISTRY_PASSWORD GIT_SSH_KEY JWT_TOKEN PROJECT_TOKEN
+      rm -f README.md
+
+  artifacts:
+    when: always
+    paths:
+      - report.json
+      - executed.ipynb
+      - executed_output.log
+      - executed_tail.log
+
+  script:
+    # checker.py runs the notebook inside podman (--network=none, GPU via --device,
+    # dataset + models as RO volumes, $REPO as the RW volume) and scores the result.
+    - python3 checker.py
+
+send_report:
+  stage: send_report
+  when: on_success
+  tags:
+    - ioai-VoaZXWXcz3
+  image: cr.yandex/crphb5jkfgvtue082qcp/publish-report:latest
+  dependencies:
+    - test
+  script:
+    - publish report.json
+
+send_crash:
+  stage: send_crash
+  when: on_failure
+  tags:
+    - ioai-VoaZXWXcz3
+  image: cr.yandex/crphb5jkfgvtue082qcp/publish-report:latest
+  dependencies:
+    - test
+  script:
+    - |
+      cat > report.json <<EOF
+      {
+        "report": {
+          "verdict": "Crash",
+          "tests": []
+        }
+      }
+      EOF
+    - publish report.json
