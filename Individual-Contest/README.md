@@ -80,5 +80,3 @@ Aleksandr Domoratskiy · Damir Ismagilov · Tatiana Kolinkova · Davlet Sibgatul
 **АО НИТ**, for providing GPUs.
 
 And thanks to the **delegation team leaders**, who translated and reviewed the statements in `Translations/` overnight between contest days.
-
-Credits are as presented in the International Jury Report at the IOAI 2026 Closing Ceremony. The at-home round tasks and their authors are listed separately in [`../At-Home-Round`](../At-Home-Round).
