@@ -2,7 +2,7 @@
 
 Official task materials from the **International Olympiad in Artificial Intelligence 2026**, held in Astana, Kazakhstan.
 
-The olympiad brought together **473 contestants from 103 delegations**, across an at-home qualifying round and two on-site competition days.
+The olympiad brought together **462 contestants from 103 delegations**, across an at-home qualifying round and two on-site competition days.
 
 ## Contents
 
