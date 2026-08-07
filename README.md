@@ -29,6 +29,8 @@ The main competition: **three tasks per day over two on-site days**, each solved
 **Day 1** — Find the Order · Robot Chasing · Potato
 **Day 2** — Double Agent Dilemma · Ghost of the Machine · IOAI Field
 
+Materials for IOAI Field are not published in this repository.
+
 Each task folder holds the English statement in Markdown and PDF, its figures, and two sets of translations — the delegations' reviewed versions and a broader set of machine translations. See the [Individual Contest README](Individual-Contest/README.md) for task summaries, statement limits, the translation policy, and full credits.
 
 ## GAITE Contest
