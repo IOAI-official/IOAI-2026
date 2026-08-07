@@ -52,8 +52,3 @@ The tasks, contest platform, and translations were the work of the Host and Inte
 
 These materials are released under the [Creative Commons Attribution 4.0 International licence](LICENSE) (CC BY 4.0). You are free to share and adapt them, including commercially, provided you give appropriate credit, link to the licence, and indicate any changes you made.
 
-Suggested attribution:
-
-> International Olympiad in Artificial Intelligence 2026 — task materials, CC BY 4.0, https://github.com/IOAI-official/IOAI-2026
-
-They are published so that future contestants, coaches, and researchers can learn from them. Data files, baselines, and reference solutions are not included yet and will be added later.
