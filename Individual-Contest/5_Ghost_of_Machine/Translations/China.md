@@ -1,0 +1,96 @@
+# 机器幽灵
+
+- **时间限制：** 10 分钟
+- **基线分数：** 28.6
+- **环境：** 一块 GPU（≈16 GB VRAM），无互联网
+- **提交文件大小 (Solution size:)：** `solution.ipynb` ≤ 20 MB
+- **存储空间：** 5 GB
+- **预训练模型：** 仅限 **[bge-base-en-v1.5](https://yastatic.net/s3/contest/ioai/5/01_BAAI_bge-base-en-v1.5_MODEL_CARD.html)**——一个文本**编码器**（embedding 模型）。
+
+
+## 任务
+
+哈萨克斯坦国家档案馆正在发生一些怪事。图书管理员说，有些书过去的结局并非如此，但无人能够证明——每一本副本都一模一样，而且每个故事仍然合乎情理。现邀请你作为一名 AI 研究员找出这些改动。
+![幽灵](../ghost.jpg)
+
+一段文本起初是人类撰写的，并在某个位置悄然切换为由语言模型生成的续文。整体阅读时，它看起来像一篇连贯的文章——但在中间的某个位置，作者从人变成了机器。你的任务是**找出这个切换位置：人类部分结束且机器部分开始处的字符索引** (**the character index where the human
+part ends and the machine part begins**)。
+
+每个样本都是一个字符串 `text`。其中恰好有一个边界。边界之前的所有内容都由人类撰写；从边界开始的所有内容都由机器生成。
+
+## 数据集
+
+纯文本英语段落，每段各有一个边界。
+
+- **A 部分**（边界之前）：人类撰写文本的节选。
+- **B 部分**（从边界开始）：由语言模型在以 A 部分为条件的情况下生成的续文。
+- 两部分各至少有 180 个单词；总长度约为 500–800 个单词。
+- **`boundary_char_index`** is the index of the **first character of Part B**：
+  - `text[:boundary_char_index]` 是人类部分 (text[:boundary_char_index] is the human part together with **the single space** that separates the two.)，而
+  - `text[boundary_char_index:]` 是机器部分
+	(text[boundary_char_index:] is exactly the machine part)。
+
+#### 你将获得的内容
+
+你会收到**两个文件夹**：
+
+| 文件夹 | 样本数 | `answers.jsonl`？ | 用途 |
+|--------|---------|------------------|-----------|
+| `dataset/train/` | 1,221 | ✅ 包含 | 训练／微调你的方法 |
+| `dataset/test_public/`  | 380   | ✅ 包含（开发集副本） | 运行你的流程并在本地自行评分 |
+
+在**评分时**，你的 `dataset/test_public/` 文件夹会被**替换为一个隐藏评测集**。它的格式相同，但**不含 `answers.jsonl`**。你的笔记本会在该数据集上重新运行，并对其生成的 `answers.jsonl` 进行评分。
+
+- 公开排行榜使用隐藏的 **test_leaderboard_a** 数据集（380 个样本）。
+
+- 最终排名使用隐藏的 **test_leaderboard_b** 数据集（380 个样本）。
+
+这三个评测集的大小相同，并且都与 `train` 来自相同的分布，因此你在本地获得的 `dataset/test_public/` 分数可以合理估计你的排行榜分数。
+
+#### 磁盘格式
+
+```
+dataset/train/data.jsonl      # one JSON object per line: {"id": "...", "text": "..."}
+dataset/train/answers.jsonl   # {"id": "...", "boundary_char_index": 1842}
+dataset/test_public/data.jsonl       # {"id": "...", "text": "..."}
+dataset/test_public/answers.jsonl    # dev copy only — ABSENT in the hidden grading set
+```
+
+- `answers.jsonl` 中的 id 与 `data.jsonl` 中的 id 相匹配。
+- 每当你进行训练或微调时，都可使用 `dataset/train/`（含答案）。
+
+## 输出（提交格式）
+
+你需要提交**一个笔记本，其名称必须为 `solution.ipynb`**。必须使用这一确切文件名。任何其他名称的文件都会被拒绝，且不会运行。
+
+你的笔记本必须**读取 `dataset/test_public/data.jsonl`**，并在仓库根目录下写入一个文件 **`answers.jsonl`**——每行一个 JSON 对象，将每个样本 id 映射到你预测的边界字符索引：
+
+```json
+{"id": "example_000123", "boundary_char_index": 1790}
+{"id": "example_000124", "boundary_char_index": 2450}
+```
+
+- `boundary_char_index` 必须是**位于 `[0, len(text)]` 中的整数**。
+- `dataset/test_public/data.jsonl` 中的每个 id 都应恰好出现一次。若某个样本未出现在 `answers.jsonl` 中（或其值不是整数／超出范围） **(or with a non-integer / out-of-range value) **，则该样本得分为 0。
+
+## 评分
+
+对于每个样本，令 `p` 为你预测的索引，`t` 为真实边界。单样本分数随字符距离呈指数衰减：
+
+$$\text{score} = \exp\!\left(-\frac{|p - t|}{\tau}\right) \in (0, 1], 
+~ \text{where} ~ \tau = 100.$$
+
+因此，分数具有以下表现：
+- **=1.0**——与边界字符完全一致；
+- **≈0.78**——偏差 25 个字符；- **≈0.61**——偏差 50 个字符；
+- **≈0.37**——偏差 100 个字符；
+- **≈0.01**——偏差 500 个字符。
+
+**最终分数是**该数据划分中所有样本的单样本分数平均值（以 0–100 的尺度报告）。该指标会奖励接近边界的预测，而不仅仅是完全准确的预测 (**rewards getting *close*, not just exact.**)。
+
+## 约束
+
+- **环境：** 一块 GPU（≈16 GB VRAM），评分时无互联网——允许使用的模型（见下文）已预先提供。整个运行过程的**实际用时限制：10 分钟**——其中必须包括你在评分时进行的任何训练／微调，**以及**在评测集上的推理。
+- **允许的预训练模型**——以下列表是完整列表；不得使用任何其他预训练权重。该模型已**预先提供在环境中**（正常加载即可，例如 `from_pretrained`；评分时无互联网）：
+  - **bge-base-en-v1.5**——一个具有 110M 参数的文本**编码器**（embedding 模型）。它会生成句子／段落 embedding；它不是生成式语言模型 (**not a generative language model**)。你可以**直接使用它（冻结特征），也可以在 `train` 数据划分上对其进行微调**（全量微调可满足 16 GB／10 分钟的限制）。
+- 对经典／统计模型不作限制：你可以在自行计算的 embedding 特征之上构建任何基于特征的模型（例如 scikit-learn 分类器或回归器）。*预训练深度学习权重*受上述列表限制 (*Pretrained deep-learning weights* are only restricted to the list above.)。

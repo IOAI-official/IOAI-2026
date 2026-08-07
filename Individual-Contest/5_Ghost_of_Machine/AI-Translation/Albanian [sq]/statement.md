@@ -1,0 +1,133 @@
+# Fantazma e Makinerisë
+
+- **Kufiri kohor:** 10 minuta
+- **Rezultati bazë:** 28.6
+- **Rezultati i Komitetit Shkencor:** 93.41
+- **Mjedisi:** një GPU (≈16 GB VRAM), pa internet
+- **Madhësia e zgjidhjes:** `solution.ipynb` ≤ 20 MB
+- **Hapësira e ruajtjes:** 5 GB
+- **Modelet e paratrajnuara:** vetëm **[bge-base-en-v1.5](https://yastatic.net/s3/contest/ioai/5/01_BAAI_bge-base-en-v1.5_MODEL_CARD.html)** — një **enkoder** teksti (model embeddings).
+
+
+## Detyra
+
+Gjëra të çuditshme po ndodhin në Arkivin Kombëtar të Kazakistanit. Bibliotekarët thonë se disa libra dikur përfundonin ndryshe, por askush nuk mund ta vërtetojë — çdo kopje është e njëjtë dhe çdo histori ende ka kuptim. Jeni ftuar si studiues i AI-së për të gjetur ndryshimet.
+![Fantazma](../../ghost.jpg)
+
+Një fragment fillon si tekst i shkruar nga një njeri dhe, në një pikë të caktuar, kalon në mënyrë të padukshme
+në një vazhdim të gjeneruar nga një model gjuhësor. I lexuar si një i tërë, ai duket si
+një pjesë koherente — por diku në mes autori ndryshon nga një person
+në një makinë. Detyra juaj është të **gjeni atë kalim: indeksin e karakterit ku
+përfundon pjesa njerëzore dhe fillon pjesa e makinës**.
+
+Çdo kampion është një varg i vetëm `text`. Ekziston saktësisht një kufi. Gjithçka
+para tij është njerëzore; gjithçka prej tij e tutje është gjeneruar nga makina.
+
+## Dataset-i
+
+Fragmente teksti në anglisht të thjeshtë, me nga një kufi secili.
+
+- **Pjesa A** (para kufirit): një fragment nga një tekst i shkruar nga njeriu.
+- **Pjesa B** (nga kufiri e tutje): një vazhdim i prodhuar nga një model gjuhësor,
+  i kushtëzuar nga Pjesa A.
+- Secila anë ka të paktën 180 fjalë; gjatësia totale është ~500–800 fjalë.
+- **`boundary_char_index`** është offset-i i karakterit ku përfundon Pjesa A:
+  `text[:boundary_char_index]` është pjesa njerëzore dhe
+  `text[boundary_char_index:].lstrip()` është pjesa e makinës.
+
+#### Çfarë merrni
+
+Ju merrni **dy dosje**:
+
+| Dosja | Kampionët | `answers.jsonl`? | Përdoreni për të |
+|--------|---------|------------------|-----------|
+| `dataset/train/` | 1,221 | ✅ i përfshirë | trajnuar / fine-tune metodën tuaj |
+| `dataset/test_public/`  | 380   | ✅ i përfshirë (kopje dev) | ekzekutuar pipeline-in tuaj dhe llogaritur lokalisht rezultatin tuaj |
+
+Në **kohën e vlerësimit**, dosja juaj `dataset/test_public/` **zëvendësohet nga një
+bashkësi e fshehur vlerësimi**. Ajo ka të njëjtin format, por **pa `answers.jsonl`**. Notebook-u juaj
+ekzekutohet përsëri mbi të dhe vlerësohet `answers.jsonl` që ai prodhon.
+
+- Tabela publike e renditjes përdor një bashkësi të fshehur **test_leaderboard_a** (380 kampionë).
+
+- Renditja përfundimtare përdor një bashkësi të fshehur **test_leaderboard_b** (380 kampionë).
+
+Të tria bashkësitë e
+vlerësimit kanë të njëjtën madhësi dhe janë marrë nga e njëjta shpërndarje si `train`, kështu që rezultati juaj lokal
+`dataset/test_public/` është një vlerësim i arsyeshëm i rezultatit tuaj në tabelën e renditjes.
+
+#### Formati në disk
+
+```
+dataset/train/data.jsonl      # one JSON object per line: {"id": "...", "text": "..."}
+dataset/train/answers.jsonl   # {"id": "...", "boundary_char_index": 1842}
+dataset/test_public/data.jsonl       # {"id": "...", "text": "..."}
+dataset/test_public/answers.jsonl    # dev copy only — ABSENT in the hidden grading set
+```
+
+- Id-të në `answers.jsonl` përputhen me id-të në `data.jsonl`.
+- `dataset/train/` (me përgjigjet) është i disponueshëm sa herë që kryeni trajnim ose fine-tune.
+
+## Dalja (formati i dorëzimit)
+
+Ju dorëzoni **një notebook të vetëm, i cili duhet të emërtohet `solution.ipynb`**. Ky emër i saktë skedari është i detyrueshëm. Çdo gjë tjetër refuzohet pa u ekzekutuar.
+
+Notebook-u juaj duhet të **lexojë `dataset/test_public/data.jsonl`** dhe të shkruajë një skedar të vetëm
+**`answers.jsonl`** në rrënjën e repository-t — një objekt JSON për çdo rresht, që lidh
+çdo id kampioni me indeksin e parashikuar të karakterit të kufirit:
+
+```json
+{"id": "example_000123", "boundary_char_index": 1790}
+{"id": "example_000124", "boundary_char_index": 2450}
+```
+
+- `boundary_char_index` duhet të jetë një **numër i plotë në `[0, len(text)]`**.
+- Çdo id në `dataset/test_public/data.jsonl` duhet të shfaqet saktësisht një herë. Një kampion që mungon
+  nga `answers.jsonl` (ose me një vlerë jo të plotë / jashtë intervalit) merr rezultatin 0
+  për atë kampion.
+
+## Vlerësimi
+
+Për çdo kampion, le të jetë `p` indeksi juaj i parashikuar dhe `t` kufiri i vërtetë. Rezultati për kampion bie në mënyrë eksponenciale me largësinë në karaktere:
+
+$$\text{score} = \exp\!\left(-\frac{|p - t|}{\tau}\right) \in (0, 1], 
+~ \text{where} ~ \tau = 100.$$
+
+Kjo sjell sjelljen e mëposhtme të rezultatit:
+- **=1.0** — karakteri i saktë i kufirit;
+- **≈0.78** — devijim prej 25 karakteresh; - **≈0.61** — devijim prej 50 karakteresh;
+- **≈0.37** — devijim prej 100 karakteresh;
+- **≈0.01** — devijim prej 500 karakteresh.
+
+**Rezultati përfundimtar është mesatarja** e rezultateve për kampion në të gjithë kampionët e ndarjes
+(raportohet në një shkallë 0–100). Metrika shpërblen afrimin, jo vetëm saktësinë.
+
+## Kufizimet
+
+- **Mjedisi:** një GPU (≈16 GB VRAM), pa internet në kohën e vlerësimit — modeli i lejuar
+  (më poshtë) është tashmë i siguruar. **Buxheti i kohës reale: 10 minuta** për të gjithë
+  ekzekutimin — ky duhet të mbulojë çdo trajnim / fine-tune që kryeni në kohën e vlerësimit
+  **plus** inferencën në bashkësinë e vlerësimit.
+- **Modeli i paratrajnuar i lejuar** — kjo listë është shteruese; nuk mund të përdoren pesha të tjera
+  të paratrajnuara. Ai është **i siguruar paraprakisht në mjedis** (ngarkojeni normalisht, p.sh.
+  `from_pretrained`; nuk ka internet në kohën e vlerësimit):
+  - **bge-base-en-v1.5** — një **enkoder** teksti me 110M parametra (model embeddings). Ai
+    prodhon embeddings fjalish/fragmentesh; nuk është një model gjuhësor gjenerues. Ju
+    mund ta përdorni **siç është (veçori të ngrira) ose ta fine-tune në ndarjen `train`**
+    (fine-tune i plotë përshtatet brenda buxhetit prej 16 GB / 10 minutash).
+- Mjetet klasike / statistikore janë të pakufizuara: mund të ndërtoni çfarëdo modeli të bazuar në veçori
+  (p.sh., klasifikues ose regresorë scikit-learn) mbi veçoritë embedding që
+  llogaritni vetë. *Peshat e paratrajnuara të deep learning* kufizohen vetëm në listën e mësipërme.
+
+## Baseline-i
+
+`solution.ipynb` i dhënë është një referencë triviale: ai vlerëson një
+“pjesë mesatare të kufirit” të vetme nga `dataset/train/` dhe parashikon të njëjtën pjesë të
+gjatësisë për çdo fragment testimi. Ai merr rezultatin **28.6** në ndarjen e fshehur
+**test_leaderboard_a** dhe ekziston vetëm si model i ekzekutueshëm për ciklin
+lexo-`dataset/test_public/` → shkruaj-`answers.jsonl`.
+
+**Rezultati i Komitetit Shkencor prej 93.41**, i matur në të njëjtën ndarje dhe me të njëjtin
+buxhet prej 10 minutash, vjen nga fine-tune i enkoderit të lejuar në `train` dhe gjetja
+e kalimit si një pikë ndryshimi përgjatë fjalive. Ky nuk është një kufi i sipërm — maksimumi
+në këtë metrikë është 100.
