@@ -8,10 +8,7 @@ code/
   grading/    the grader used to score submissions
 ```
 
-The **data is not in this repository** — it is published separately on Hugging Face:
-
-- public data (given to contestants): <https://huggingface.co/IOAI-official/IOAI-2026/ghost-of-the-machine/public>
-- private data (used for grading): <https://huggingface.co/IOAI-official/IOAI-2026/ghost-of-the-machine/private>
+The **data is not in this repository**, and the dataset for this task is **not published**.
 
 Download it and place it so the notebook can find it (see the note below), then open the baseline.
 

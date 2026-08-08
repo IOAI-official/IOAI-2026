@@ -8,10 +8,11 @@ code/
   grading/    the grader used to score submissions
 ```
 
-The **data is not in this repository** — it is published separately on Hugging Face:
+The **data is not in this repository** — it is published as a standalone Hugging Face dataset:
 
-- public data (given to contestants): <https://huggingface.co/IOAI-official/IOAI-2026/robot-chasing/public>
-- private data (used for grading): <https://huggingface.co/IOAI-official/IOAI-2026/robot-chasing/private>
+- <https://huggingface.co/datasets/IOAI-official/ioai-2026-robot-chasing>
+
+The dataset has `public/` (what contestants received) and `private/` (the graded leaderboard A/B splits) — its dataset card documents every subset.
 
 Download it and place it so the notebook can find it (see the note below), then open the baseline.
 
