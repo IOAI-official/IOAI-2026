@@ -1,0 +1,165 @@
+# =============================================================================
+# Yandex Contest CI template — IOAI Field
+# =============================================================================
+# CANONICAL: byte-for-byte identical across every problem EXCEPT the per-problem
+# `variables:` block below and the grader filename (check.py). To stand up a new
+# problem, copy this file and edit only that block (and ship the matching grader
+# + locked data/runtime).
+#
+# Grading contract: an api-triggered pipeline pulls the participant submission
+# into $REPO_NAME, runs `python check.py`, which writes report.json. A clean run
+# -> send_report publishes the score; any hard failure -> send_crash publishes a
+# Crash verdict so Contest never waits forever.
+# =============================================================================
+
+workflow:
+  name: "Check submission $RUN_ID"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+
+variables:
+  # ---- shared across all problems (do not change) -------------------------
+  # The notebook runs directly in the official IOAI runtime via podman -- CPython
+  # 3.13 with every statement library preinstalled (identical to Jupyter). No image
+  # is built and NOTHING is pip-installed (the image has no pip on PATH by design);
+  # check.py's preflight asserts 3.13 inside it. The default CI job image only needs
+  # git + podman. The field runtime (_dist-linux-py313) is a 3.13 ABI extension, so
+  # this runtime MUST stay a 3.13 image.
+  RUNTIME_IMAGE: "cr.yandex/crpe6hs3eavcafkcisb5/ioai-gitlab:20260805"
+
+  # ---- per-problem knobs (edit these when cloning to a new problem) --------
+  # Each 10m phase limit receives 20% of CI grace time (12m total).
+  PRERUN_WALL_CLOCK_BUDGET_SEC: "1440"
+  PRERUN_NOTEBOOK_TIMEOUT_SEC: "1440"
+  WALL_CLOCK_BUDGET_SEC: "1440"
+  NOTEBOOK_TIMEOUT_SEC: "1440"
+  SCORE_BUDGET_SEC: "1440"
+  # Optional importable Python file containing participant model classes.
+  MAX_CUSTOM_MODEL_BYTES: "1048576"
+  # Space-separated locked LFS files that MUST materialize before grading. IOAI
+  # Field ships no LFS (small JSON + a plain-git runtime .so), so this is empty.
+  LOCKED_FILES: ""
+  # Public diagnostic config. It is run and scored before any hidden config is mounted.
+  PRERUN_SPLIT: "train_config"
+  # Which hidden split is graded: leaderboard_a_config (live) | leaderboard_b_config (final)
+  GRADE_SPLIT: "leaderboard_b_config"
+
+stages:
+  - test
+  - send_report
+  - send_crash
+
+test:
+  stage: test
+  tags:
+    - ioai-VoaZXWXcz3
+  # No `image:` -> use the runner's DEFAULT image, which ships git + podman. The
+  # notebook itself runs in a podman container (the IOAI runtime), so this job
+  # needs no CUDA/pytorch of its own -- just enough to run podman.
+  # Hard cap for the complete prerun + hidden-test + scoring workflow.
+  timeout: 30m
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - scheduler_failure
+
+  before_script:
+    # git-lfs FIRST: harmless if this ci-template ships no LFS assets (the loop
+    # over $LOCKED_FILES simply does not run). If any are listed, materialize and
+    # verify them before check.py mounts them into the sandbox.
+    - |
+      git lfs install --skip-repo
+      git lfs pull || true
+      for f in $LOCKED_FILES; do
+        sz=$(stat -c%s "$f" 2>/dev/null || echo 0)
+        if [ "$sz" -lt 10000 ]; then
+          echo "FATAL: $f is $sz bytes -- LFS materialization failed (pointer survived)"
+          exit 1
+        fi
+      done
+    # Bring the participant solution into $REPO_NAME: download for a file task,
+    # clone for a repository task. Then drop the .git dirs.
+    - |
+      if [ -n "$RUN_URL" ]; then
+        mkdir -p "$REPO_NAME"
+        cd "$REPO_NAME"
+        curl -fL --progress-bar -H "Authorization: Bearer $JWT_TOKEN" -o "$FILENAME" "$RUN_URL"
+        cd ..
+      else
+        # Pull the notebook and optional custom-model module -- no data/runtime.
+        GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --filter=blob:none --no-checkout \
+          "https://git:$PROJECT_TOKEN@$CI_SERVER_HOST/$REPO_PATH.git" "$REPO_NAME"
+        cd "$REPO_NAME"
+        git fetch --depth 1 --filter=blob:none origin $COMMIT_ID
+        git checkout $COMMIT_ID -- solution.ipynb || echo "WARN: solution.ipynb not found in submission"
+        if git cat-file -e "$COMMIT_ID:custom_model.py" 2>/dev/null; then
+          git checkout "$COMMIT_ID" -- custom_model.py
+        fi
+        rm -rf .git
+        cd ..
+      fi
+      rm -rf .git
+    # Strip grading secrets so the participant notebook (a child process) cannot
+    # read them. NOTE: full isolation needs a network-isolated runner -- which is
+    # exactly what --network=none in check.py provides.
+    - |
+      unset CI_JOB_TOKEN CI_DEPENDENCY_PROXY_PASSWORD CI_REGISTRY_PASSWORD GIT_SSH_KEY JWT_TOKEN PROJECT_TOKEN
+      rm -f README.md
+    # No runtime image is built: check.py runs the notebook directly in the IOAI
+    # runtime (RUNTIME_IMAGE) with `--network=none`. That image already ships every
+    # library + nbconvert/ipykernel, so there is nothing to install at grade time.
+
+  artifacts:
+    when: always
+    paths:
+      - report.json
+      - artifacts/
+      - prerun_executed.ipynb
+      - prerun_stdout.log
+      - prerun_stderr.log
+      - executed.ipynb
+      - executed_stdout.log
+      - executed_stderr.log
+
+  script:
+    # check.py first executes + validates against the public train_config. Only a
+    # clean prerun starts a second, isolated execution against the hidden split.
+    - python3 check.py
+
+send_report:
+  stage: send_report
+  when: on_success
+  # Same tag as `test`: an untagged job lands on the default (Russia) runner pool,
+  # which since 2026-07-23 cannot pull registry.gitlab.com images (Roskomnadzor
+  # block on the gitlab-runner-helper). Pin it to the same runner as test.
+  tags:
+    - ioai-VoaZXWXcz3
+  image: cr.yandex/crphb5jkfgvtue082qcp/publish-report:latest
+  dependencies:
+    - test
+  script:
+    - publish report.json
+
+send_crash:
+  stage: send_crash
+  when: on_failure
+  # Same tag as `test` (see send_report): keep it off the untagged Russia pool that
+  # can no longer reach registry.gitlab.com.
+  tags:
+    - ioai-VoaZXWXcz3
+  image: cr.yandex/crphb5jkfgvtue082qcp/publish-report:latest
+  dependencies:
+    - test
+  script:
+    - |
+      cat > report.json <<EOF
+      {
+        "report": {
+          "verdict": "Crash",
+          "tests": []
+        }
+      }
+      EOF
+    - publish report.json

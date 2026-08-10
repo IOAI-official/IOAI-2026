@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Local artifacts produced by manual grader runs.
+.grader-*/
+submission/
+report.json
+artifacts/
+prerun_executed.ipynb
+prerun_stdout.log
+prerun_stderr.log
+executed.ipynb
+executed_stdout.log
+executed_stderr.log

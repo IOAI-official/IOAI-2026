@@ -1,0 +1,8 @@
+# Participants submit solution.ipynb and may include custom_model.py. Ignore
+# everything else so no extra files (notebook checkpoints, outputs, downloaded
+# data/models) get committed by accident.
+*
+!.gitignore
+!.gitattributes
+!solution.ipynb
+!custom_model.py

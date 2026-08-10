@@ -20,6 +20,7 @@ The same six tasks were also used for the [GAITE Contest](../GAITE-Contest), whi
 |---|---|---|---|
 | 4 | [Double Agent Dilemma](4_Double_Agent_Dilemma) | 12 min | A ResNet18 and a ViT-Tiny both classify the same images at 100% accuracy. Exploit where the two architectures disagree. |
 | 5 | [Ghost of the Machine](5_Ghost_of_Machine) | 10 min | Machine-altered passages have been slipped into an archive of books. Locate the edits. |
+| 6 | [IOAI Field](6_IOAI_Field) | 5 min | Model the IOAI logo as a spatial function $F(x, y, \overline{W})$ and train a generator from scratch — no pretrained weights. |
 
 Every task ran on **one GPU (≈16 GB VRAM) with no internet access** and 5 GB of storage. Solution size limits are stated in each task's statement.
 
@@ -79,5 +80,3 @@ Aleksandr Domoratskiy · Damir Ismagilov · Tatiana Kolinkova · Davlet Sibgatul
 **АО НИТ**, for providing GPUs.
 
 And thanks to the **delegation team leaders**, who translated and reviewed the statements in `Translations/` overnight between contest days.
-
-Materials for **IOAI Field** (Day 2, task 6) are not published in this repository.
