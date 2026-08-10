@@ -35,9 +35,10 @@ Every task folder has the same shape:
   <figures>               images referenced by the statement
   Translations/           statements reviewed and corrected by team leaders
   AI-Translation/         machine translations, 44 languages — see its README
+  code/                   baseline solution and the contest grader — see its README
 ```
 
-Data, baselines, and reference solutions are not included yet; they will be added later.
+Task data is not stored in this repository — each task's dataset (public and private subsets) is published on Hugging Face, linked from that task's `code/README.md`.
 
 Two sets of translations are shipped, and they are **not** equivalent:
 
