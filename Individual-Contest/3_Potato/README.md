@@ -1,4 +1,4 @@
-# Ghost of the Machine — code
+# Potato — code & data
 
 Everything needed to develop a solution to this task and to score it the way the contest did.
 
@@ -10,7 +10,7 @@ code/
 
 The **data is not in this repository** — it is published as a standalone Hugging Face dataset:
 
-- <https://huggingface.co/datasets/IOAI-official/ioai-2026-ghost-of-the-machine>
+- <https://huggingface.co/datasets/IOAI-official/ioai-2026-potato>
 
 The dataset has `public/` (what contestants received) and `private/` (the graded leaderboard A/B splits) — its dataset card documents every subset.
 
@@ -18,18 +18,20 @@ Download it and place it so the notebook can find it (see the note below), then 
 
 ## Running the baseline
 
-The baseline measures the average position of the boundary across the training passages and predicts that same fraction for every test passage.
+The baseline loads the public word embeddings and repeatedly proposes the unused word most similar to the current winner.
 
 ```bash
-cd baseline
+cd code/baseline
 jupyter lab solution.ipynb
 ```
 
-Pure Python — no machine-learning libraries needed to run it. Reads `dataset/train` and `dataset/test_public`, writes `answers.jsonl`.
+`local_test.py` scores a solution offline: `python local_test.py solution.ipynb`. It uses the public embeddings, so its score only approximates the official one.
+
+This task speaks a line-by-line JSON protocol on stdin/stdout. Keep debug prints on **stderr** — anything on stdout is read as a protocol message. Override the data location with `POTATO_DATA_DIR`.
 
 ## Scoring a solution
 
-`grading/` holds the grader used during the contest. It reads a solution plus the private data and prints a score. The grader's own README documents how it is invoked and what it expects; it was built to run inside a prepared container image, so running it locally takes some setup.
+`code/grading/` holds the grader used during the contest. It reads a solution plus the private data and prints a score. The grader's own README documents how it is invoked and what it expects; it was built to run inside a prepared container image, so running it locally takes some setup.
 
 ## A note on the baselines
 

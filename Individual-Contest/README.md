@@ -30,15 +30,16 @@ Every task folder has the same shape:
 
 ```
 <N>_<Task_Name>/
+  README.md               how to run the baseline, score solutions, and where the data lives
   statement.md            official English statement (authoritative)
   statement.pdf           rendered English statement
   <figures>               images referenced by the statement
   Translations/           statements reviewed and corrected by team leaders
   AI-Translation/         machine translations, 44 languages — see its README
-  code/                   baseline solution and the contest grader — see its README
+  code/                   baseline solution and the contest grader
 ```
 
-Task data is not stored in this repository — each task's dataset (public and private subsets) is published on Hugging Face, linked from that task's `code/README.md`.
+Task data is not stored in this repository — each task's dataset (public and private subsets) is published on Hugging Face, linked from that task's `README.md`.
 
 Two sets of translations are shipped, and they are **not** equivalent:
 

@@ -1,4 +1,4 @@
-# IOAI Field — code
+# IOAI Field — code & data
 
 Everything needed to develop a solution to this task and to score it the way the contest did.
 
@@ -21,7 +21,7 @@ Download it and place it so the notebook can find it (see the note below), then 
 The baseline trains a small network from scratch to reproduce the logo field, then saves it as `model.pt`.
 
 ```bash
-cd baseline
+cd code/baseline
 PYTHONPATH=../grading jupyter lab solution.ipynb
 ```
 
@@ -31,7 +31,7 @@ PYTHONPATH=../grading jupyter lab solution.ipynb
 
 ## Scoring a solution
 
-`grading/` holds the grader used during the contest. It reads a solution plus the private data and prints a score. The grader's own README documents how it is invoked and what it expects; it was built to run inside a prepared container image, so running it locally takes some setup.
+`code/grading/` holds the grader used during the contest. It reads a solution plus the private data and prints a score. The grader's own README documents how it is invoked and what it expects; it was built to run inside a prepared container image, so running it locally takes some setup.
 
 ## A note on the baselines
 
