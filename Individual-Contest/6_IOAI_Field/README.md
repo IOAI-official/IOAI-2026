@@ -4,9 +4,10 @@ Everything needed to develop a solution to this task and to score it the way the
 
 ```
 code/
-  baseline-original/   the baseline solution package
-  grading-original/    the grader used to score submissions
+  baseline-original/   the baseline exactly as kept during the contest
+  grading-original/    the grader exactly as used to score submissions
 ```
+
 
 The **data is not in this repository** — it is published as a standalone Hugging Face dataset:
 

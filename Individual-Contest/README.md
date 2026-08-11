@@ -36,10 +36,10 @@ Every task folder has the same shape:
   <figures>               images referenced by the statement
   Translations/           statements reviewed and corrected by team leaders
   AI-Translation/         machine translations, 44 languages — see its README
-  code/                   the original baseline solution and the contest grader
+  code/                   official contest baseline & grader, plus unofficial educational notebooks
 ```
 
-Task data is not stored in this repository — each task's dataset (public and private subsets) is published on Hugging Face, linked from that task's `README.md`.
+Task data is not stored in this repository — each task's dataset (public and private subsets) is published on Hugging Face, linked from that task's `README.md`. The unofficial educational notebooks (run anywhere, data straight from Hugging Face) cover tasks 1–5; IOAI Field ships only the contest originals for now, because its protected field runtime is platform-locked (CPython 3.13, x86-64).
 
 Two sets of translations are shipped, and they are **not** equivalent:
 
