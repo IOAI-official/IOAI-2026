@@ -4,8 +4,9 @@ Everything needed to develop a solution to this task and to score it the way the
 
 ```
 code/
-  baseline/   the reference solution given to contestants, plus any helper code
-  grading/    the grader used to score submissions
+  baseline/            the baseline solution package
+  baseline-original/   the baseline as originally kept during development
+  grading-original/    the grader used to score submissions
 ```
 
 The **data is not in this repository** — it is published as a standalone Hugging Face dataset:
@@ -22,16 +23,16 @@ The baseline trains a small network from scratch to reproduce the logo field, th
 
 ```bash
 cd code/baseline
-PYTHONPATH=../grading jupyter lab solution.ipynb
+PYTHONPATH=../grading-original jupyter lab solution.ipynb
 ```
 
 `custom_model.py` holds the `CustomModel` class the notebook trains.
 
-**The notebook imports `core`, which lives in `../grading/core`** — during the contest it was mounted read-only next to the notebook. Set `PYTHONPATH=../grading` (as above) or the import will fail. The model must stay under 20,260 parameters or the score is halved.
+**The notebook imports `core`, which lives in `../grading-original/core`** — during the contest it was mounted read-only next to the notebook. Set `PYTHONPATH=../grading-original` (as above) or the import will fail. The model must stay under 20,260 parameters or the score is halved.
 
 ## Scoring a solution
 
-`code/grading/` holds the grader used during the contest. It reads a solution plus the private data and prints a score. The grader's own README documents how it is invoked and what it expects; it was built to run inside a prepared container image, so running it locally takes some setup.
+`code/grading-original/` holds the grader used during the contest. It reads a solution plus the private data and prints a score. The grader's own README documents how it is invoked and what it expects; it was built to run inside a prepared container image, so running it locally takes some setup.
 
 ## A note on the baselines
 
