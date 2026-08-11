@@ -36,7 +36,7 @@ Every task folder has the same shape:
   <figures>               images referenced by the statement
   Translations/           statements reviewed and corrected by team leaders
   AI-Translation/         machine translations, 44 languages — see its README
-  code/                   baseline (current and original) and the contest grader
+  code/                   the original baseline solution and the contest grader
 ```
 
 Task data is not stored in this repository — each task's dataset (public and private subsets) is published on Hugging Face, linked from that task's `README.md`.

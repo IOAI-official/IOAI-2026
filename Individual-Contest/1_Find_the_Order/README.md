@@ -4,8 +4,7 @@ Everything needed to develop a solution to this task and to score it the way the
 
 ```
 code/
-  baseline/            the baseline solution package
-  baseline-original/   the baseline as originally kept during development
+  baseline-original/   the baseline solution package
   grading-original/    the grader used to score submissions
 ```
 
@@ -22,7 +21,7 @@ Download it and place it so the notebook can find it (see the note below), then 
 The baseline transcribes each turn with a speech model and orders turns by a simple heuristic.
 
 ```bash
-cd code/baseline
+cd code/baseline-original
 jupyter lab solution.ipynb
 ```
 

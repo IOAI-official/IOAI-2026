@@ -4,8 +4,7 @@ Everything needed to develop a solution to this task and to score it the way the
 
 ```
 code/
-  baseline/            the baseline solution package
-  baseline-original/   the baseline as originally kept during development
+  baseline-original/   the baseline solution package
   grading-original/    the grader used to score submissions
 ```
 
@@ -22,7 +21,7 @@ Download it and place it so the notebook can find it (see the note below), then 
 The baseline trains a small network from scratch to reproduce the logo field, then saves it as `model.pt`.
 
 ```bash
-cd code/baseline
+cd code/baseline-original
 PYTHONPATH=../grading-original jupyter lab solution.ipynb
 ```
 
