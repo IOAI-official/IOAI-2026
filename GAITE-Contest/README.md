@@ -5,6 +5,6 @@ GAITE is a simplified version of the IOAI Individual Contest, dedicated for the 
 The tasks of GAITE Contest were exactly the same tasks of the Individual Contest. You can find all task materials in the Individual-Contest folder.
 
 The only differences were:
-* For each task, some hints were provided. Hints for the Day 1 tasks are in the task folders here; the Day 2 hints are not published.
+* For each task, some hints were provided.
 * The LLM Chatbot of GAITE was slightly more powerful. 
 * GAITE has a separate scoreboard and ranking. 
